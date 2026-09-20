@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Deriv AI Market Scanner</title>
+<style>
+:root{--bg:#070a12;--panel:#0f1422;--panel2:#151b2c;--line:#242c40;--text:#f4f7fb;--muted:#8e9ab1;--accent:#7c5cff;--good:#29d391;--warn:#ffbf69;--bad:#ff6b7a}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#12172a 0,#070a12 45%);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button{font:inherit}.wrap{max-width:1180px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.brand h1{font-size:25px;margin:0}.brand p{margin:3px 0;color:var(--muted)}.status{display:flex;align-items:center;gap:8px;padding:9px 13px;border:1px solid var(--line);border-radius:999px;background:#0b101b}.dot{width:9px;height:9px;border-radius:50%;background:var(--bad)}.dot.on{background:var(--good);box-shadow:0 0 12px var(--good)}.grid{display:grid;grid-template-columns:1.35fr .8fr;gap:16px}.panel{background:linear-gradient(180deg,#111728,#0c111d);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 50px #0004}.hero{display:grid;grid-template-columns:1fr 1fr;gap:14px}.signal{min-height:250px;display:flex;flex-direction:column;justify-content:center}.eyebrow{color:var(--muted);text-transform:uppercase;letter-spacing:.12em;font-size:11px}.digit{font-size:86px;line-height:1;font-weight:800;margin:10px 0;color:#fff}.strength{font-size:32px;font-weight:750;color:var(--good)}.muted{color:var(--muted)}.bar{height:9px;background:#1a2132;border-radius:99px;overflow:hidden;margin-top:10px}.fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--good));width:0;transition:width .4s}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{padding:14px;border:1px solid var(--line);background:#0b101a;border-radius:13px}.stat b{display:block;font-size:22px;margin-top:4px}.row{display:flex;justify-content:space-between;align-items:center;gap:10px}.controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}.btn{border:1px solid var(--line);background:#151b2a;color:#fff;padding:10px 15px;border-radius:11px;cursor:pointer}.btn.primary{background:var(--accent);border-color:transparent}.btn:disabled{opacity:.45;cursor:not-allowed}.markets{margin-top:16px}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line)}.table th{color:var(--muted);font-size:11px;text-transform:uppercase}.pill{padding:4px 8px;border-radius:999px;background:#1a2132;color:var(--muted);font-size:11px}.pill.good{background:#0d2b22;color:var(--good)}.pill.warn{background:#2c2416;color:var(--warn)}.log{height:150px;overflow:auto;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:#080c14;border:1px solid var(--line);padding:10px;border-radius:10px;color:#aeb8cb}.foot{margin-top:15px;color:var(--muted);font-size:12px}.notice{border:1px solid #3b3159;background:#171229;padding:12px;border-radius:12px;margin-bottom:15px}.count{font-variant-numeric:tabular-nums;font-size:28px;font-weight:800}.toggle{display:flex;gap:8px;align-items:center}.toggle input{accent-color:var(--accent)}@media(max-width:850px){.grid,.hero{grid-template-columns:1fr}.wrap{padding:13px}.digit{font-size:72px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><h1>Deriv AI Market Scanner</h1><p>Live Match + Even/Odd analysis • 1-minute rescan</p></div>
+    <div class="status"><span id="dot" class="dot"></span><span id="conn">Disconnected</span></div>
+  </div>
+  <div class="notice"><b>Analysis mode:</b> The score is a model confidence score based on recent tick structure and frequency features. It is not a guarantee of a winning contract.</div>
+  <div class="grid">
+    <section class="panel signal">
+      <div class="eyebrow">Current Match Signal</div>
+      <div id="signalText" class="muted" style="margin-top:18px">Waiting for live market data…</div>
+      <div id="digit" class="digit">—</div>
+      <div class="row"><span>Model strength</span><span id="strength" class="strength">—</span></div>
+      <div class="bar"><div id="fill" class="fill"></div></div>
+      <div class="row" style="margin-top:22px"><span>1-minute expiry/rescan</span><span id="count" class="count">60s</span></div>
+    </section>
+    <section class="panel">
+      <div class="eyebrow">Parity Analysis</div>
+      <div class="stats" style="margin-top:14px">
+        <div class="stat"><span class="muted">EVEN</span><b id="even">—</b></div>
+        <div class="stat"><span class="muted">ODD</span><b id="odd">—</b></div>
+        <div class="stat"><span class="muted">Ticks analysed</span><b id="ticks">0</b></div>
+        <div class="stat"><span class="muted">Markets scanned</span><b id="marketCount">0</b></div>
+      </div>
+      <div style="margin-top:18px"><div class="row"><span class="muted">Selected market</span><b id="market">—</b></div><div class="row" style="margin-top:8px"><span class="muted">Last digit</span><b id="last">—</b></div></div>
+      <div class="controls">
+        <button id="start" class="btn primary">Start scanner</button><button id="stop" class="btn" disabled>Stop</button>
+        <label class="toggle"><input id="auto" type="checkbox" checked> Auto-rescan</label>
+      </div>
+    </section>
+  </div>
+  <section class="panel markets">
+    <div class="row"><div><div class="eyebrow">Market ranking</div><div class="muted">Only candidates reaching 80%+ are promoted to the main signal.</div></div><span id="scanState" class="pill">Idle</span></div>
+    <div style="overflow:auto;margin-top:10px"><table class="table"><thead><tr><th>Market</th><th>Match digit</th><th>Strength</th><th>Even</th><th>Odd</th><th>Status</th></tr></thead><tbody id="rows"><tr><td colspan="6" class="muted">Start the scanner to begin.</td></tr></tbody></table></div>
+  </section>
+  <section class="panel" style="margin-top:16px"><div class="eyebrow">Activity</div><div id="log" class="log" style="margin-top:10px"></div><div class="foot">Ownership note: this is a standalone client-side app. Add your own Deriv application ID before production use if you want the connection tied to your own Deriv developer application.</div></section>
+</div>
+<script>
+const WS='wss://ws.binaryws.com/websockets/v3';
+const MIN_SIGNAL=80,HISTORY=160,RESCAN_MS=60000;
+let ws=null,running=false,marketMeta=new Map(),digitMarkets=[],histories=new Map(),results=[],selected=null,timer=null,seconds=60,reconnectTimer=null,req=0,contractPending=0,contractReqs=new Map();
+const $=id=>document.getElementById(id);
+function log(s){const el=$('log');el.insertAdjacentHTML('beforeend',`<div>${new Date().toLocaleTimeString()} — ${s}</div>`);el.scrollTop=el.scrollHeight}
+function setConn(on){$('dot').classList.toggle('on',on);$('conn').textContent=on?'Connected':'Disconnected'}
+function send(o){if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({...o,req_id:++req}));return true}return false}
+function lastDigit(quote,pipSize){
+  const p=Number(pipSize);
+  const q=Number(quote);
+  if(!Number.isFinite(q))return null;
+  let decimals=0;
+  if(p>0&&p<1) decimals=Math.max(0,Math.round(-Math.log10(p)));
+  const text=decimals? q.toFixed(decimals):String(q);
+  const m=text.replace(/[^0-9]/g,'').match(/(\d)$/);
+  return m?Number(m[1]):null;
+}
+function analyse(symbol,arr){
+  if(arr.length<25)return null;
+  const n=arr.length,counts=Array(10).fill(0);arr.forEach(d=>counts[d]++);
+  const recent=arr.slice(-50),rc=Array(10).fill(0);recent.forEach(d=>rc[d]++);
+  const short=arr.slice(-15),sc=Array(10).fill(0);short.forEach(d=>sc[d]++);
+  let best=0,bestScore=-1;
+  for(let d=0;d<10;d++){
+    const freq=counts[d]/n, rf=rc[d]/recent.length, sf=sc[d]/short.length;
+    const gap=arr.slice(-10).includes(d)?0:Math.min(1,(arr.length-(arr.lastIndexOf(d)+1))/20);
+    const score=.25*freq+.50*rf+.20*sf+.05*(1-gap);
+    if(score>bestScore){bestScore=score;best=d}
+  }
+  const even=arr.filter(d=>d%2===0).length/n*100,odd=100-even;
+  const expected=10,chi=counts.reduce((sum,c)=>sum+Math.pow(c-n/10,2)/(n/10),0);
+  const imbalance=Math.min(1,chi/18);
+  const concentration=Math.min(1,Math.max(0,(bestScore-.10)/.18));
+  const confidence=Math.min(97,Math.max(50,50+concentration*35+imbalance*12));
+  return {symbol,digit:best,strength:confidence,even,odd,last:arr[n-1],ticks:n};
+}
+function render(){
+  $('marketCount').textContent=digitMarkets.length;
+  $('ticks').textContent=selected?.ticks||0;
+  $('market').textContent=selected?.symbol||'—';
+  $('last').textContent=selected?.last??'—';
+  $('even').textContent=selected?selected.even.toFixed(1)+'%':'—';
+  $('odd').textContent=selected?selected.odd.toFixed(1)+'%':'—';
+  if(selected){
+    const qualified=selected.strength>=MIN_SIGNAL;
+    $('digit').textContent=qualified?selected.digit:'—';
+    $('strength').textContent=qualified?selected.strength.toFixed(1)+'%':'—';
+    $('fill').style.width=(qualified?selected.strength:0)+'%';
+    $('signalText').textContent=qualified?'QUALIFIED MATCH SIGNAL':'No qualified Match signal (80% threshold)';
+  }
+  $('rows').innerHTML=results.length?results.slice(0,20).map(r=>`<tr><td>${r.symbol}</td><td><b>${r.digit}</b></td><td>${r.strength.toFixed(1)}%</td><td>${r.even.toFixed(1)}%</td><td>${r.odd.toFixed(1)}%</td><td><span class="pill ${r.strength>=80?'good':'warn'}">${r.strength>=80?'80%+':'Scanning'}</span></td></tr>`).join(''):'<tr><td colspan="6" class="muted">Finding digit markets…</td></tr>';
+}
+function rank(){results=[];for(const [s,a] of histories){const r=analyse(s,a);if(r)results.push(r)}results.sort((a,b)=>b.strength-a.strength);selected=results[0]||null;render()}
+function subscribeDigitMarkets(){
+  histories.clear();
+  const list=[...new Set(digitMarkets)];
+  if(!list.length){$('scanState').textContent='No digit markets found';log('No markets with Match/Even/Odd contracts were confirmed.');return}
+  $('scanState').textContent=`Loading ${list.length} digit markets…`;
+  list.forEach(s=>{
+    send({ticks_history:s,count:HISTORY,end:'latest',style:'ticks'});
+    send({ticks:s,subscribe:1});
+  });
+  log(`Streaming ${list.length} confirmed digit markets.`);
+}
+function requestDigitContracts(symbols){
+  contractPending=symbols.length;
+  contractReqs.clear();
+  if(!contractPending){subscribeDigitMarkets();return}
+  $('scanState').textContent=`Checking ${contractPending} markets…`;
+  // Keep requests below the documented WebSocket burst limit by sending a small batch.
+  let i=0;
+  const batch=()=>{
+    const end=Math.min(i+15,symbols.length);
+    for(;i<end;i++){
+      const s=symbols[i];
+      const rid=req+1;
+      contractReqs.set(rid,s);
+      send({contracts_for:s,req_id:rid});
+    }
+    if(i<symbols.length)setTimeout(batch,700);
+  };
+  batch();
+}
+function handleContracts(m){
+  const rid=m.req_id;
+  const s=contractReqs.get(rid) || m.echo_req?.contracts_for || m.contracts_for?.available?.[0]?.underlying_symbol;
+  const available=m.contracts_for?.available||[];
+  const types=new Set(available.map(x=>String(x.contract_type||'').toUpperCase()));
+  if(s && ['DIGITMATCH','DIGITEVEN','DIGITODD'].some(t=>types.has(t)))digitMarkets.push(s);
+  if(rid)contractReqs.delete(rid);
+  contractPending--;
+  if(contractPending===0){
+    digitMarkets=[...new Set(digitMarkets)];
+    log(`Found ${digitMarkets.length} markets supporting Match/Even/Odd.`);
+    subscribeDigitMarkets();
+  }
+}
+function connect(){
+  if(!running)return;
+  clearTimeout(reconnectTimer);
+  try{ws=new WebSocket(WS)}catch(e){log('Could not open WebSocket: '+e.message);return}
+  ws.onopen=()=>{
+    setConn(true);log('Connected to Deriv public market-data WebSocket.');
+    send({active_symbols:'brief',product_type:'basic'});
+  };
+  ws.onmessage=e=>{
+    let m;try{m=JSON.parse(e.data)}catch{return}
+    if(m.error){log('Deriv API error: '+m.error.message);return}
+    if(m.msg_type==='active_symbols'){
+      const syms=m.active_symbols||[];
+      marketMeta.clear();
+      syms.filter(x=>Number(x.exchange_is_open)!==0 && Number(x.is_trading_suspended)!==1).forEach(x=>{
+        const symbol=x.underlying_symbol||x.symbol;
+        if(symbol)marketMeta.set(symbol,{name:x.underlying_symbol_name||x.display_name||symbol,pip:x.pip_size??x.pip,market:x.market,type:x.underlying_symbol_type||x.symbol_type});
+      });
+      const synthetic=[...marketMeta.entries()].filter(([,x])=>{
+        const type=String(x.type||'').toLowerCase();
+        const market=String(x.market||'').toLowerCase();
+        return type.includes('synthetic') || type.includes('synthetic_index') || market.includes('synthetic');
+      }).map(([s])=>s);
+      digitMarkets=[];
+      log(`Received ${marketMeta.size} active symbols. Checking ${synthetic.length} synthetic markets for digit contracts…`);
+      requestDigitContracts(synthetic);
+      return;
+    }
+    if(m.msg_type==='contracts_for'){handleContracts(m);return}
+    if(m.msg_type==='history'){
+      const s=m.echo_req?.ticks_history;
+      const meta=marketMeta.get(s);
+      const prices=m.history?.prices||[];
+      if(s&&meta&&prices.length){
+        const arr=prices.map(q=>lastDigit(q,meta.pip)).filter(d=>d!==null);
+        if(arr.length)histories.set(s,arr.slice(-HISTORY));
+        rank();
+      }
+      return;
+    }
+    if(m.msg_type==='tick'){
+      const s=m.tick?.symbol||m.tick?.underlying_symbol;
+      const meta=marketMeta.get(s);
+      const d=meta?lastDigit(m.tick.quote,meta.pip):lastDigit(m.tick.quote,m.tick.pip_size);
+      if(s&&d!==null){
+        let a=histories.get(s)||[];a.push(d);if(a.length>HISTORY)a.shift();histories.set(s,a);rank();
+      }
+    }
+  };
+  ws.onerror=()=>log('WebSocket connection error.');
+  ws.onclose=()=>{setConn(false);if(running){log('Connection closed. Reconnecting…');reconnectTimer=setTimeout(connect,2500)}};
+}
+function freshScan(){
+  histories.clear();results=[];selected=null;render();
+  if(ws&&ws.readyState===WebSocket.OPEN){$('scanState').textContent='Rescanning…';send({active_symbols:'brief',product_type:'basic'});log('Fresh 1-minute scan started.')}
+}
+function stop(){
+  running=false;clearInterval(timer);clearTimeout(reconnectTimer);
+  if(ws)try{ws.close()}catch{} ws=null;
+  setConn(false);$('start').disabled=false;$('stop').disabled=true;$('scanState').textContent='Stopped';log('Scanner stopped.');
+}
+function start(){
+  if(running)return;
+  running=true;$('start').disabled=true;$('stop').disabled=false;seconds=60;$('count').textContent='60s';
+  clearInterval(timer);timer=setInterval(()=>{seconds--;if(seconds<=0){seconds=60;if($('auto').checked)freshScan()}$('count').textContent=seconds+'s'},1000);
+  connect();log('Scanner started. 1-minute automatic rescan enabled.');
+}
+$('start').onclick=start;$('stop').onclick=stop;render();
+</script>
+</body></html>
