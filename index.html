@@ -1,25 +1,1748 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Deriv AI Market Scanner</title><style>body{margin:0;background:#070a12;color:#f5f7fb;font:14px system-ui;padding:16px}.wrap{max-width:1100px;margin:auto}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.panel{background:#0e1422;border:1px solid #263047;border-radius:16px;padding:16px;margin-top:14px}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.muted{color:#8994aa}.status{padding:8px 12px;border:1px solid #263047;border-radius:20px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#f55;margin-right:7px}.dot.on{background:#2d9}.digit{font-size:80px;font-weight:800}.strength{font-size:28px;font-weight:800}.stats{display:grid;grid-template-columns:1fr 1fr;gap:9px}.stat{background:#0a0f19;border:1px solid #222c40;border-radius:11px;padding:12px}.stat b{display:block;font-size:20px}.log{height:220px;overflow:auto;background:#070b13;border:1px solid #222c40;padding:9px;font:12px monospace}.btn{padding:10px 14px;border-radius:10px;background:#7057ff;color:#fff;border:0}.btn:disabled{opacity:.45}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid #202a3d}.good{color:#2d9}.warn{color:#ffbf69}@media(max-width:800px){.grid{grid-template-columns:1fr}}</style></head><body><div class="wrap"><div class="top"><div><h1>Deriv AI Market Scanner</h1><div class="muted">Live digit analysis • automatic 60-second rescan</div></div><div class="status"><span id="dot" class="dot"></span><span id="status">Starting…</span></div></div><div class="panel"><b>Analysis only.</b> Model strength is a statistical confidence score, not a guaranteed win probability.</div><div class="grid"><div class="panel"><div class="muted">MATCH SIGNAL</div><div id="message">Connecting…</div><div id="digit" class="digit">—</div><div>Model strength <span id="strength" class="strength">—</span></div><div style="margin-top:12px"><button id="start" class="btn">Start scanner</button> <button id="stop" class="btn" disabled>Stop</button></div></div><div class="panel"><div class="muted">LIVE DATA</div><div class="stats"><div class="stat">Markets<b id="markets">0</b></div><div class="stat">Ticks<b id="ticks">0</b></div><div class="stat">Even<b id="even">—</b></div><div class="stat">Odd<b id="odd">—</b></div><div class="stat">Next scan<b id="timer">60s</b></div><div class="stat">Selected<b id="selected">—</b></div></div></div></div><div class="panel"><div class="muted">MARKETS</div><div style="overflow:auto"><table><thead><tr><th>Symbol</th><th>Ticks</th><th>Match</th><th>Strength</th><th>Even</th><th>Odd</th></tr></thead><tbody id="rows"><tr><td colspan="6">Waiting for data…</td></tr></tbody></table></div></div><div class="panel"><div class="muted">ACTIVITY LOG</div><div id="log" class="log"></div></div></div><script>
-const ENDPOINTS=['wss://ws.binaryws.com/websockets/v3','wss://ws.derivws.com/websockets/v3'];
-const FALLBACK=['1HZ10V','1HZ25V','1HZ50V','1HZ75V','1HZ100V','1HZ150V','1HZ200V','1HZ250V','R_10','R_25','R_50','R_75','R_100'];
-const HISTORY=160,MIN_SIGNAL=80,SCAN_MS=60000;
-let ws=null,running=false,req=0,ep=0,retryTimer=null,scanTimer=null,seconds=60;
-const meta=new Map(),data=new Map(),subs=new Set();
-const $=id=>document.getElementById(id);
-function log(x){const e=$('log');e.insertAdjacentHTML('beforeend','<div>'+new Date().toLocaleTimeString()+' — '+x+'</div>');e.scrollTop=e.scrollHeight}
-function status(on,t){$('dot').classList.toggle('on',on);$('status').textContent=t}
-function send(o){if(!ws||ws.readyState!==1)return 0;const id=++req;ws.send(JSON.stringify({...o,req_id:id}));return id}
-function decimals(p){p=Number(p);if(!Number.isFinite(p)||p<=0)return null;const d=Math.round(-Math.log10(p));return d>=0&&d<=10?d:null}
-function lastDigit(q,p){const n=Number(q);if(!Number.isFinite(n))return null;const d=decimals(p);let s=d===null?String(q):n.toFixed(d);s=s.replace(/\s/g,'');const m=s.match(/(\d)$/);return m?Number(m[1]):null}
-function analyse(a){if(a.length<25)return null;const n=a.length,c=Array(10).fill(0);a.forEach(d=>c[d]++);const recent=a.slice(-60),short=a.slice(-20),r=Array(10).fill(0),s=Array(10).fill(0);recent.forEach(d=>r[d]++);short.forEach(d=>s[d]++);let best=0,bs=-1;for(let d=0;d<10;d++){const score=.25*c[d]/n+.5*r[d]/recent.length+.2*s[d]/short.length+.05*(1-Math.min(1,(n-1-a.lastIndexOf(d))/30));if(score>bs){bs=score;best=d}}const even=a.filter(d=>d%2===0).length/n*100;const exp=n/10,chi=c.reduce((z,x)=>z+(x-exp)*(x-exp)/Math.max(exp,1),0);const strength=Math.min(97,Math.max(50,50+Math.min(1,Math.max(0,(bs-.1)/.18))*35+Math.min(1,chi/18)*12));return{digit:best,strength,even,odd:100-even,ticks:n}}
-function render(){const arr=[...data.entries()].map(([symbol,v])=>({symbol,...v})).filter(x=>x.ticks).sort((a,b)=>b.strength-a.strength);const top=arr[0];$('markets').textContent=meta.size;$('ticks').textContent=arr.reduce((n,x)=>n+x.ticks,0);$('selected').textContent=top?.symbol||'—';$('even').textContent=top?top.even.toFixed(1)+'%':'—';$('odd').textContent=top?top.odd.toFixed(1)+'%':'—';const qualified=top&&top.strength>=MIN_SIGNAL;$('digit').textContent=qualified?top.digit:'—';$('strength').textContent=qualified?top.strength.toFixed(1)+'%':'—';$('message').textContent=qualified?'QUALIFIED MATCH SIGNAL':'Scanning — no Match signal at 80% yet';$('rows').innerHTML=arr.length?arr.map(x=>'<tr><td>'+x.symbol+'</td><td>'+x.ticks+'</td><td>'+x.digit+'</td><td class="'+(x.strength>=80?'good':'warn')+'">'+x.strength.toFixed(1)+'%</td><td>'+x.even.toFixed(1)+'%</td><td>'+x.odd.toFixed(1)+'%</td></tr>').join(''):'<tr><td colspan="6">Waiting for tick data…</td></tr>'}
-function addMarket(symbol,name,pip){if(!meta.has(symbol))meta.set(symbol,{name:name||symbol,pip:pip??null})}
-function requestMarkets(){meta.clear();data.clear();subs.clear();render();log('Requesting current active symbols…');send({active_symbols:'brief',product_type:'basic'})}
-function chooseMarkets(list){const a=Array.isArray(list)?list:[];for(const x of a){const s=x.underlying_symbol||x.symbol;if(!s)continue;const market=String(x.market||'').toLowerCase();const type=String(x.underlying_symbol_type||x.symbol_type||'').toLowerCase();if((market.includes('synthetic')||market.includes('derived')||type.includes('synthetic')||type.includes('derived')||FALLBACK.includes(s))&&Number(x.is_trading_suspended)!==1)addMarket(s,x.underlying_symbol_name||x.display_name,s?x.pip_size??x.pip:null)}for(const s of FALLBACK)addMarket(s,s,null);log('Market pool ready: '+meta.size+' symbols.');for(const s of meta.keys()){if(subs.has(s))continue;subs.add(s);send({ticks_history:s,count:HISTORY,end:'latest',style:'ticks',subscribe:0});send({ticks:s,subscribe:1})}log('Requested history and live ticks for every market.');$('message').textContent='Loading live ticks…'}
-function onMessage(m){if(m.error){log('Deriv error: '+(m.error.message||'Unknown error'));return}if(m.msg_type==='active_symbols'){chooseMarkets(m.active_symbols);return}if(m.msg_type==='history'){const s=m.echo_req?.ticks_history;if(!s||!meta.has(s))return;const pip=m.pip_size??meta.get(s).pip;if(pip!=null)meta.get(s).pip=pip;const arr=(m.history?.prices||[]).map(q=>lastDigit(q,meta.get(s).pip)).filter(x=>x!==null).slice(-HISTORY);if(arr.length){data.set(s,analyse(arr));render();}return}if(m.msg_type==='tick'&&m.tick){const s=m.tick.symbol;if(!s||!meta.has(s))return;const pip=m.tick.pip_size??meta.get(s).pip;if(pip!=null)meta.get(s).pip=pip;const d=lastDigit(m.tick.quote,meta.get(s).pip);if(d===null)return;const arr=(data.get(s)?.digits||[]);arr.push(d);if(arr.length>HISTORY)arr.shift();const a=analyse(arr);if(a){a.digits=arr;data.set(s,a);render()}}}
-function connect(){if(!running)return;if(ws&&ws.readyState===1)return;clearTimeout(retryTimer);const url=ENDPOINTS[ep%ENDPOINTS.length];status(false,'Connecting…');log('Connecting to '+url);try{ws=new WebSocket(url)}catch(e){log('Connection creation failed: '+e.message);ep++;retry();return}ws.onopen=()=>{status(true,'Connected');log('Connected.');requestMarkets()};ws.onmessage=e=>{try{onMessage(JSON.parse(e.data))}catch{}};ws.onerror=()=>log('Browser WebSocket error.');ws.onclose=e=>{log('Closed: code '+e.code+(e.reason?' — '+e.reason:''));status(false,'Disconnected');ws=null;if(running){ep++;subs.clear();retry()}}}
-function retry(){clearTimeout(retryTimer);retryTimer=setTimeout(connect,2500)}
-function fresh(){seconds=60;log('Fresh 60-second scan started.');if(ws&&ws.readyState===1)requestMarkets();else connect()}
-function start(){if(running)return;running=true;$('start').disabled=true;$('stop').disabled=false;seconds=60;connect();clearInterval(scanTimer);scanTimer=setInterval(()=>{seconds--;if(seconds<=0)fresh();$('timer').textContent=seconds+'s'},1000);log('Scanner started.')}
-function stop(){running=false;clearTimeout(retryTimer);clearInterval(scanTimer);if(ws)try{ws.close()}catch{}ws=null;status(false,'Stopped');$('start').disabled=false;$('stop').disabled=true;log('Scanner stopped.')}
-$('start').onclick=start;$('stop').onclick=stop;start();
-</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deriv AI Market Scanner</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:#070a12;
+  color:#f5f7fb;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  padding:16px
+}
+
+.wrap{
+  max-width:1100px;
+  margin:auto
+}
+
+.top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px
+}
+
+h1{
+  margin:0 0 5px;
+  font-size:28px
+}
+
+.muted{
+  color:#8994aa
+}
+
+.panel{
+  background:#0e1422;
+  border:1px solid #263047;
+  border-radius:16px;
+  padding:16px;
+  margin-top:14px
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:14px
+}
+
+.status{
+  padding:8px 12px;
+  border:1px solid #263047;
+  border-radius:20px;
+  white-space:nowrap
+}
+
+.dot{
+  display:inline-block;
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  background:#f55;
+  margin-right:7px
+}
+
+.dot.on{
+  background:#2d9
+}
+
+.digit{
+  font-size:80px;
+  font-weight:800;
+  line-height:1.1;
+  margin-top:10px
+}
+
+.strength{
+  font-size:28px;
+  font-weight:800
+}
+
+.stats{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px
+}
+
+.stat{
+  background:#0a0f19;
+  border:1px solid #222c40;
+  border-radius:11px;
+  padding:12px
+}
+
+.stat b{
+  display:block;
+  font-size:20px;
+  margin-top:3px
+}
+
+.log{
+  height:220px;
+  overflow:auto;
+  background:#070b13;
+  border:1px solid #222c40;
+  padding:9px;
+  font:12px monospace
+}
+
+.btn{
+  padding:10px 14px;
+  border-radius:10px;
+  background:#7057ff;
+  color:#fff;
+  border:0;
+  cursor:pointer
+}
+
+.btn:disabled{
+  opacity:.45;
+  cursor:not-allowed
+}
+
+table{
+  width:100%;
+  border-collapse:collapse
+}
+
+th,td{
+  text-align:left;
+  padding:8px;
+  border-bottom:1px solid #202a3d
+}
+
+.good{
+  color:#2d9
+}
+
+.warn{
+  color:#ffbf69
+}
+
+.signal{
+  font-size:16px;
+  font-weight:700;
+  margin-top:8px
+}
+
+.note{
+  font-size:13px;
+  line-height:1.5
+}
+
+@media(max-width:800px){
+  .grid{
+    grid-template-columns:1fr
+  }
+
+  .top{
+    align-items:flex-start;
+    flex-direction:column
+  }
+
+  .digit{
+    font-size:65px
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <h1>Deriv AI Market Scanner</h1>
+      <div class="muted">
+        Live digit analysis • automatic 60-second rescan
+      </div>
+    </div>
+
+    <div class="status">
+      <span id="dot" class="dot"></span>
+      <span id="status">Starting…</span>
+    </div>
+  </div>
+
+
+  <div class="panel note">
+    <b>Analysis only.</b>
+    This scanner does not place trades.
+    Model strength is a statistical confidence score,
+    not a guaranteed win probability.
+  </div>
+
+
+  <div class="grid">
+
+    <div class="panel">
+
+      <div class="muted">MATCH SIGNAL</div>
+
+      <div id="message" class="signal">
+        Connecting to Deriv…
+      </div>
+
+      <div id="digit" class="digit">
+        —
+      </div>
+
+      <div>
+        Model strength
+        <span id="strength" class="strength">—</span>
+      </div>
+
+      <div style="margin-top:15px">
+
+        <button id="start" class="btn">
+          Start scanner
+        </button>
+
+        <button id="stop" class="btn" disabled>
+          Stop
+        </button>
+
+      </div>
+
+    </div>
+
+
+    <div class="panel">
+
+      <div class="muted">LIVE DATA</div>
+
+      <div class="stats">
+
+        <div class="stat">
+          Markets
+          <b id="markets">0</b>
+        </div>
+
+        <div class="stat">
+          Ticks
+          <b id="ticks">0</b>
+        </div>
+
+        <div class="stat">
+          Even
+          <b id="even">—</b>
+        </div>
+
+        <div class="stat">
+          Odd
+          <b id="odd">—</b>
+        </div>
+
+        <div class="stat">
+          Next scan
+          <b id="timer">60s</b>
+        </div>
+
+        <div class="stat">
+          Selected
+          <b id="selected">—</b>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div class="panel">
+
+    <div class="muted">
+      MARKETS
+    </div>
+
+    <div style="overflow:auto">
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>Symbol</th>
+            <th>Ticks</th>
+            <th>Match</th>
+            <th>Strength</th>
+            <th>Even</th>
+            <th>Odd</th>
+          </tr>
+
+        </thead>
+
+        <tbody id="rows">
+
+          <tr>
+            <td colspan="6">
+              Waiting for data…
+            </td>
+          </tr>
+
+        </tbody>
+
+      </table>
+
+    </div>
+
+  </div>
+
+
+  <div class="panel">
+
+    <div class="muted">
+      ACTIVITY LOG
+    </div>
+
+    <div id="log" class="log"></div>
+
+  </div>
+
+</div>
+
+
+<script>
+
+/* =========================================================
+   DERIV CONNECTION
+========================================================= */
+
+const ENDPOINTS = [
+  "wss://ws.derivws.com/websockets/v3",
+  "wss://ws.binaryws.com/websockets/v3"
+];
+
+
+/* =========================================================
+   FALLBACK SYNTHETIC SYMBOLS
+========================================================= */
+
+const FALLBACK = [
+  "1HZ10V",
+  "1HZ25V",
+  "1HZ50V",
+  "1HZ75V",
+  "1HZ100V",
+  "1HZ150V",
+  "1HZ200V",
+  "1HZ250V",
+  "R_10",
+  "R_25",
+  "R_50",
+  "R_75",
+  "R_100"
+];
+
+
+/* =========================================================
+   SETTINGS
+========================================================= */
+
+const HISTORY = 160;
+
+const MIN_SIGNAL = 80;
+
+const SCAN_MS = 60000;
+
+
+/* =========================================================
+   STATE
+========================================================= */
+
+let ws = null;
+
+let running = false;
+
+let endpointIndex = 0;
+
+let requestId = 0;
+
+let retryTimer = null;
+
+let scanTimer = null;
+
+let seconds = 60;
+
+let reconnectAttempts = 0;
+
+const meta = new Map();
+
+const data = new Map();
+
+const subscriptions = new Set();
+
+
+/* =========================================================
+   DOM
+========================================================= */
+
+const $ = id => document.getElementById(id);
+
+
+/* =========================================================
+   LOGGING
+========================================================= */
+
+function log(message){
+
+  const box = $("log");
+
+  const line =
+    document.createElement("div");
+
+  line.textContent =
+    new Date().toLocaleTimeString()
+    + " — "
+    + message;
+
+  box.appendChild(line);
+
+  box.scrollTop = box.scrollHeight;
+
+}
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function setStatus(connected,text){
+
+  $("dot").classList.toggle(
+    "on",
+    connected
+  );
+
+  $("status").textContent = text;
+
+}
+
+
+/* =========================================================
+   SEND
+========================================================= */
+
+function send(payload){
+
+  if(
+    !ws ||
+    ws.readyState !== WebSocket.OPEN
+  ){
+
+    return 0;
+
+  }
+
+  const id = ++requestId;
+
+  ws.send(
+    JSON.stringify({
+      ...payload,
+      req_id:id
+    })
+  );
+
+  return id;
+
+}
+
+
+/* =========================================================
+   DECIMAL PLACES
+========================================================= */
+
+function getDecimals(pip){
+
+  const value = Number(pip);
+
+  if(
+    !Number.isFinite(value) ||
+    value <= 0
+  ){
+
+    return null;
+
+  }
+
+  const decimals =
+    Math.round(
+      -Math.log10(value)
+    );
+
+  if(
+    decimals < 0 ||
+    decimals > 10
+  ){
+
+    return null;
+
+  }
+
+  return decimals;
+
+}
+
+
+/* =========================================================
+   LAST DIGIT
+========================================================= */
+
+function lastDigit(quote,pip){
+
+  const number =
+    Number(quote);
+
+  if(!Number.isFinite(number)){
+
+    return null;
+
+  }
+
+  const decimals =
+    getDecimals(pip);
+
+  let text;
+
+  if(decimals === null){
+
+    text = String(quote);
+
+  }else{
+
+    text =
+      number.toFixed(decimals);
+
+  }
+
+  text =
+    text.replace(/\s/g,"");
+
+  const match =
+    text.match(/(\d)$/);
+
+  if(!match){
+
+    return null;
+
+  }
+
+  return Number(match[1]);
+
+}
+
+
+/* =========================================================
+   MARKET ANALYSIS
+========================================================= */
+
+function analyse(digits){
+
+  if(
+    !Array.isArray(digits) ||
+    digits.length < 25
+  ){
+
+    return null;
+
+  }
+
+
+  const n =
+    digits.length;
+
+
+  const counts =
+    Array(10).fill(0);
+
+
+  for(const digit of digits){
+
+    if(
+      Number.isInteger(digit) &&
+      digit >= 0 &&
+      digit <= 9
+    ){
+
+      counts[digit]++;
+
+    }
+
+  }
+
+
+  const recent =
+    digits.slice(-60);
+
+  const short =
+    digits.slice(-20);
+
+
+  const recentCounts =
+    Array(10).fill(0);
+
+  const shortCounts =
+    Array(10).fill(0);
+
+
+  for(const digit of recent){
+
+    recentCounts[digit]++;
+
+  }
+
+
+  for(const digit of short){
+
+    shortCounts[digit]++;
+
+  }
+
+
+  let bestDigit = 0;
+
+  let bestScore = -Infinity;
+
+
+  for(let d=0;d<10;d++){
+
+    const overall =
+      counts[d] / n;
+
+    const recentRate =
+      recentCounts[d] /
+      recent.length;
+
+    const shortRate =
+      shortCounts[d] /
+      short.length;
+
+
+    const lastSeen =
+      digits.lastIndexOf(d);
+
+
+    let recency = 0;
+
+
+    if(lastSeen >= 0){
+
+      const distance =
+        n - 1 - lastSeen;
+
+      recency =
+        1 -
+        Math.min(
+          1,
+          distance / 30
+        );
+
+    }
+
+
+    /*
+      Weighted statistical score.
+
+      This is deliberately NOT represented
+      as an 80% probability of winning.
+    */
+
+    const score =
+      (
+        overall * 0.25
+      ) +
+      (
+        recentRate * 0.50
+      ) +
+      (
+        shortRate * 0.20
+      ) +
+      (
+        recency * 0.05
+      );
+
+
+    if(score > bestScore){
+
+      bestScore = score;
+
+      bestDigit = d;
+
+    }
+
+  }
+
+
+  const even =
+    (
+      digits.filter(
+        d => d % 2 === 0
+      ).length
+      / n
+    ) * 100;
+
+
+  const odd =
+    100 - even;
+
+
+  /*
+    Distribution deviation.
+
+    This contributes to the model score,
+    but does not represent guaranteed
+    market probability.
+  */
+
+  const expected =
+    n / 10;
+
+
+  const chi =
+    counts.reduce(
+      (total,count) => {
+
+        return total +
+          (
+            (count - expected) *
+            (count - expected)
+          )
+          /
+          Math.max(
+            expected,
+            1
+          );
+
+      },
+      0
+    );
+
+
+  let strength =
+    50 +
+    (
+      Math.min(
+        1,
+        Math.max(
+          0,
+          (bestScore - 0.10)
+          / 0.18
+        )
+      ) * 35
+    ) +
+    (
+      Math.min(
+        1,
+        chi / 18
+      ) * 12
+    );
+
+
+  strength =
+    Math.min(
+      97,
+      Math.max(
+        50,
+        strength
+      )
+    );
+
+
+  return {
+
+    digit:bestDigit,
+
+    strength,
+
+    even,
+
+    odd,
+
+    ticks:n,
+
+    digits:[...digits]
+
+  };
+
+}
+
+
+/* =========================================================
+   ADD MARKET
+========================================================= */
+
+function addMarket(
+  symbol,
+  name,
+  pip
+){
+
+  if(!meta.has(symbol)){
+
+    meta.set(
+      symbol,
+      {
+        name:
+          name || symbol,
+
+        pip:
+          pip ?? null
+      }
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   RENDER
+========================================================= */
+
+function render(){
+
+  const markets =
+    [...data.entries()]
+      .map(
+        ([symbol,value]) => ({
+          symbol,
+          ...value
+        })
+      )
+      .filter(
+        x => x.ticks
+      )
+      .sort(
+        (a,b) =>
+          b.strength -
+          a.strength
+      );
+
+
+  const top =
+    markets[0];
+
+
+  $("markets").textContent =
+    meta.size;
+
+
+  $("ticks").textContent =
+    markets.reduce(
+      (total,item) =>
+        total + item.ticks,
+      0
+    );
+
+
+  $("selected").textContent =
+    top
+      ? top.symbol
+      : "—";
+
+
+  $("even").textContent =
+    top
+      ? top.even.toFixed(1) + "%"
+      : "—";
+
+
+  $("odd").textContent =
+    top
+      ? top.odd.toFixed(1) + "%"
+      : "—";
+
+
+  const qualified =
+    top &&
+    top.strength >= MIN_SIGNAL;
+
+
+  if(qualified){
+
+    $("digit").textContent =
+      top.digit;
+
+    $("strength").textContent =
+      top.strength.toFixed(1) + "%";
+
+    $("message").textContent =
+      "QUALIFIED MATCH SIGNAL";
+
+  }else{
+
+    $("digit").textContent =
+      "—";
+
+    $("strength").textContent =
+      "—";
+
+    $("message").textContent =
+      "Scanning — no Match signal at 80% yet";
+
+  }
+
+
+  if(!markets.length){
+
+    $("rows").innerHTML =
+      `
+      <tr>
+        <td colspan="6">
+          Waiting for tick data…
+        </td>
+      </tr>
+      `;
+
+    return;
+
+  }
+
+
+  $("rows").innerHTML =
+    markets
+      .map(item => {
+
+        const cls =
+          item.strength >= 80
+            ? "good"
+            : "warn";
+
+
+        return `
+        <tr>
+
+          <td>
+            ${item.symbol}
+          </td>
+
+          <td>
+            ${item.ticks}
+          </td>
+
+          <td>
+            ${item.digit}
+          </td>
+
+          <td class="${cls}">
+            ${item.strength.toFixed(1)}%
+          </td>
+
+          <td>
+            ${item.even.toFixed(1)}%
+          </td>
+
+          <td>
+            ${item.odd.toFixed(1)}%
+          </td>
+
+        </tr>
+        `;
+
+      })
+      .join("");
+
+}
+
+
+/* =========================================================
+   REQUEST MARKETS
+========================================================= */
+
+function requestMarkets(){
+
+  meta.clear();
+
+  data.clear();
+
+  subscriptions.clear();
+
+  render();
+
+
+  log(
+    "Requesting current active symbols…"
+  );
+
+
+  send({
+    active_symbols:"brief"
+  });
+
+}
+
+
+/* =========================================================
+   SELECT MARKETS
+========================================================= */
+
+function chooseMarkets(list){
+
+  const symbols =
+    Array.isArray(list)
+      ? list
+      : [];
+
+
+  for(const item of symbols){
+
+    const symbol =
+      item.underlying_symbol ||
+      item.symbol;
+
+
+    if(!symbol){
+
+      continue;
+
+    }
+
+
+    const market =
+      String(
+        item.market || ""
+      ).toLowerCase();
+
+
+    const type =
+      String(
+        item.underlying_symbol_type ||
+        item.symbol_type ||
+        ""
+      ).toLowerCase();
+
+
+    const isSynthetic =
+      market.includes("synthetic") ||
+      market.includes("derived") ||
+      type.includes("synthetic") ||
+      type.includes("derived") ||
+      FALLBACK.includes(symbol);
+
+
+    const suspended =
+      Number(
+        item.is_trading_suspended
+      ) === 1;
+
+
+    if(
+      isSynthetic &&
+      !suspended
+    ){
+
+      addMarket(
+        symbol,
+
+        item.underlying_symbol_name ||
+        item.display_name ||
+        symbol,
+
+        item.pip_size ??
+        item.pip ??
+        null
+      );
+
+    }
+
+  }
+
+
+  /*
+    Keep the known synthetic symbols
+    available as a fallback.
+  */
+
+  for(const symbol of FALLBACK){
+
+    addMarket(
+      symbol,
+      symbol,
+      null
+    );
+
+  }
+
+
+  log(
+    "Market pool ready: "
+    + meta.size
+    + " symbols."
+  );
+
+
+  /*
+    Subscribe to history and live ticks.
+  */
+
+  for(const symbol of meta.keys()){
+
+    if(
+      subscriptions.has(symbol)
+    ){
+
+      continue;
+
+    }
+
+
+    subscriptions.add(symbol);
+
+
+    send({
+      ticks_history:symbol,
+      count:HISTORY,
+      end:"latest",
+      style:"ticks",
+      subscribe:0
+    });
+
+
+    send({
+      ticks:symbol,
+      subscribe:1
+    });
+
+  }
+
+
+  log(
+    "Requested history and live ticks."
+  );
+
+
+  $("message").textContent =
+    "Loading live ticks…";
+
+}
+
+
+/* =========================================================
+   PROCESS DERIV MESSAGE
+========================================================= */
+
+function onMessage(message){
+
+  if(message.error){
+
+    log(
+      "Deriv error: " +
+      (
+        message.error.message ||
+        "Unknown error"
+      )
+    );
+
+    return;
+
+  }
+
+
+  /*
+    Active symbols
+  */
+
+  if(
+    message.msg_type ===
+    "active_symbols"
+  ){
+
+    chooseMarkets(
+      message.active_symbols
+    );
+
+    return;
+
+  }
+
+
+  /*
+    Historical ticks
+  */
+
+  if(
+    message.msg_type ===
+    "history"
+  ){
+
+    const symbol =
+      message.echo_req &&
+      message.echo_req.ticks_history;
+
+
+    if(
+      !symbol ||
+      !meta.has(symbol)
+    ){
+
+      return;
+
+    }
+
+
+    const pip =
+      message.pip_size ??
+      meta.get(symbol).pip;
+
+
+    if(pip != null){
+
+      meta.get(symbol).pip =
+        pip;
+
+    }
+
+
+    const prices =
+      message.history &&
+      Array.isArray(
+        message.history.prices
+      )
+        ? message.history.prices
+        : [];
+
+
+    const digits =
+      prices
+        .map(
+          price =>
+            lastDigit(
+              price,
+              meta.get(symbol).pip
+            )
+        )
+        .filter(
+          digit =>
+            digit !== null
+        )
+        .slice(-HISTORY);
+
+
+    if(digits.length){
+
+      const analysis =
+        analyse(digits);
+
+
+      if(analysis){
+
+        data.set(
+          symbol,
+          analysis
+        );
+
+
+        render();
+
+      }
+
+    }
+
+
+    return;
+
+  }
+
+
+  /*
+    Live tick
+  */
+
+  if(
+    message.msg_type ===
+    "tick" &&
+    message.tick
+  ){
+
+    const symbol =
+      message.tick.symbol;
+
+
+    if(
+      !symbol ||
+      !meta.has(symbol)
+    ){
+
+      return;
+
+    }
+
+
+    const pip =
+      message.tick.pip_size ??
+      meta.get(symbol).pip;
+
+
+    if(pip != null){
+
+      meta.get(symbol).pip =
+        pip;
+
+    }
+
+
+    const digit =
+      lastDigit(
+        message.tick.quote,
+        meta.get(symbol).pip
+      );
+
+
+    if(digit === null){
+
+      return;
+
+    }
+
+
+    const previous =
+      data.get(symbol);
+
+
+    const digits =
+      previous &&
+      Array.isArray(
+        previous.digits
+      )
+        ? [...previous.digits]
+        : [];
+
+
+    digits.push(digit);
+
+
+    if(
+      digits.length >
+      HISTORY
+    ){
+
+      digits.shift();
+
+    }
+
+
+    const analysis =
+      analyse(digits);
+
+
+    if(analysis){
+
+      data.set(
+        symbol,
+        analysis
+      );
+
+
+      render();
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   CONNECT
+========================================================= */
+
+function connect(){
+
+  if(!running){
+
+    return;
+
+  }
+
+
+  if(
+    ws &&
+    ws.readyState ===
+    WebSocket.OPEN
+  ){
+
+    return;
+
+  }
+
+
+  clearTimeout(
+    retryTimer
+  );
+
+
+  const url =
+    ENDPOINTS[
+      endpointIndex %
+      ENDPOINTS.length
+    ];
+
+
+  setStatus(
+    false,
+    "Connecting…"
+  );
+
+
+  log(
+    "Connecting to "
+    + url
+  );
+
+
+  try{
+
+    ws =
+      new WebSocket(url);
+
+  }catch(error){
+
+    log(
+      "Connection creation failed: "
+      + error.message
+    );
+
+
+    endpointIndex++;
+
+    scheduleRetry();
+
+    return;
+
+  }
+
+
+  ws.onopen =
+    function(){
+
+      reconnectAttempts = 0;
+
+      setStatus(
+        true,
+        "Connected"
+      );
+
+
+      log(
+        "Connected to Deriv."
+      );
+
+
+      requestMarkets();
+
+    };
+
+
+  ws.onmessage =
+    function(event){
+
+      try{
+
+        const message =
+          JSON.parse(
+            event.data
+          );
+
+
+        onMessage(message);
+
+      }catch(error){
+
+        log(
+          "Message parsing error."
+        );
+
+      }
+
+    };
+
+
+  ws.onerror =
+    function(){
+
+      log(
+        "Browser WebSocket error."
+      );
+
+    };
+
+
+  ws.onclose =
+    function(event){
+
+      log(
+        "Connection closed. Code "
+        + event.code
+        + (
+          event.reason
+            ? " — " + event.reason
+            : ""
+        )
+      );
+
+
+      setStatus(
+        false,
+        "Disconnected"
+      );
+
+
+      ws = null;
+
+
+      if(running){
+
+        endpointIndex++;
+
+        subscriptions.clear();
+
+        scheduleRetry();
+
+      }
+
+    };
+
+}
+
+
+/* =========================================================
+   RETRY
+========================================================= */
+
+function scheduleRetry(){
+
+  clearTimeout(
+    retryTimer
+  );
+
+
+  reconnectAttempts++;
+
+
+  const delay =
+    Math.min(
+      10000,
+      2500 *
+      reconnectAttempts
+    );
+
+
+  log(
+    "Retrying connection in "
+    + Math.round(delay / 1000)
+    + "s…"
+  );
+
+
+  retryTimer =
+    setTimeout(
+      connect,
+      delay
+    );
+
+}
+
+
+/* =========================================================
+   FRESH SCAN
+========================================================= */
+
+function freshScan(){
+
+  seconds = 60;
+
+  log(
+    "Starting fresh 60-second scan."
+  );
+
+
+  if(
+    ws &&
+    ws.readyState ===
+    WebSocket.OPEN
+  ){
+
+    requestMarkets();
+
+  }else{
+
+    connect();
+
+  }
+
+}
+
+
+/* =========================================================
+   START
+========================================================= */
+
+function start(){
+
+  if(running){
+
+    return;
+
+  }
+
+
+  running = true;
+
+
+  $("start").disabled =
+    true;
+
+
+  $("stop").disabled =
+    false;
+
+
+  seconds = 60;
+
+
+  reconnectAttempts = 0;
+
+
+  endpointIndex = 0;
+
+
+  connect();
+
+
+  clearInterval(
+    scanTimer
+  );
+
+
+  scanTimer =
+    setInterval(
+      function(){
+
+        seconds--;
+
+
+        if(seconds <= 0){
+
+          freshScan();
+
+        }
+
+
+        $("timer").textContent =
+          seconds + "s";
+
+      },
+      1000
+    );
+
+
+  log(
+    "Scanner started."
+  );
+
+}
+
+
+/* =========================================================
+   STOP
+========================================================= */
+
+function stop(){
+
+  running = false;
+
+
+  clearTimeout(
+    retryTimer
+  );
+
+
+  clearInterval(
+    scanTimer
+  );
+
+
+  if(ws){
+
+    try{
+
+      ws.close();
+
+    }catch(error){}
+
+  }
+
+
+  ws = null;
+
+
+  setStatus(
+    false,
+    "Stopped"
+  );
+
+
+  $("start").disabled =
+    false;
+
+
+  $("stop").disabled =
+    true;
+
+
+  log(
+    "Scanner stopped."
+  );
+
+}
+
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+$("start").onclick =
+  start;
+
+
+$("stop").onclick =
+  stop;
+
+
+/* =========================================================
+   AUTO START
+========================================================= */
+
+start();
+
+</script>
+
+</body>
+</html>
