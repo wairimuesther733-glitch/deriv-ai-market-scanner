@@ -1,32 +1,1231 @@
-Deriv AI Market Scanner
-AI market analysis • automatic 60-second rescan
-Connecting…
-Analysis only. This scanner does not place trades. Model strength is a statistical confidence score, not a guaranteed win probability.
-MATCH SIGNAL
-Connecting to scanner backend…
-—
-Model strength —
-Start scanner Stop
-LIVE DATA
-Markets
-0
-Ticks
-0
-Even
-—
-Odd
-—
-Next scan
-60s
-Selected
-—
-MARKETS
-Symbol
-Ticks
-Match
-Strength
-Even
-Odd
-Waiting for market data…
-ACTIVITY LOG
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<title>Deriv AI Market Scanner</title>
+
+<style>
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    background:#07111f;
+    color:#f3f7ff;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+.container{
+    max-width:1100px;
+    margin:auto;
+    padding:18px;
+}
+
+.card{
+    background:#0d1b2e;
+    border:1px solid #243b59;
+    border-radius:16px;
+    padding:18px;
+    margin-bottom:16px;
+}
+
+h1{
+    margin:0 0 6px;
+    font-size:26px;
+}
+
+h2{
+    font-size:18px;
+    margin-top:0;
+}
+
+.subtitle{
+    color:#9fb1c9;
+}
+
+.status{
+    display:inline-block;
+    margin-top:12px;
+    padding:8px 13px;
+    border-radius:20px;
+    background:#63303a;
+    font-size:14px;
+}
+
+.status.connected{
+    background:#145438;
+}
+
+.status.connecting{
+    background:#66511c;
+}
+
+.signal{
+    text-align:center;
+    padding:25px;
+}
+
+.signal-title{
+    font-size:14px;
+    color:#9fb1c9;
+    letter-spacing:1px;
+}
+
+.match-digit{
+    font-size:58px;
+    font-weight:bold;
+    margin:10px 0;
+}
+
+.strength{
+    font-size:21px;
+    font-weight:bold;
+}
+
+.signal-description{
+    margin-top:8px;
+    color:#9fb1c9;
+}
+
+.controls{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+button{
+    border:0;
+    border-radius:10px;
+    padding:12px 18px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.start{
+    background:#35c98c;
+    color:#06140d;
+}
+
+.stop{
+    background:#d95d6b;
+    color:white;
+}
+
+.stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:10px;
+    margin-bottom:16px;
+}
+
+.stat{
+    background:#101f34;
+    border-radius:12px;
+    padding:14px;
+}
+
+.stat-label{
+    color:#9fb1c9;
+    font-size:13px;
+}
+
+.stat-value{
+    font-size:25px;
+    font-weight:bold;
+    margin-top:5px;
+}
+
+.table-wrap{
+    overflow-x:auto;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th,
+td{
+    padding:11px 8px;
+    text-align:left;
+    border-bottom:1px solid #243b59;
+    white-space:nowrap;
+}
+
+th{
+    color:#9fb1c9;
+    font-size:13px;
+}
+
+.signal-good{
+    color:#35d995;
+    font-weight:bold;
+}
+
+.signal-none{
+    color:#9fb1c9;
+}
+
+.log{
+    max-height:200px;
+    overflow-y:auto;
+    font-size:13px;
+    color:#9fb1c9;
+    line-height:1.7;
+}
+
+.notice{
+    font-size:12px;
+    color:#7f93ad;
+    margin-top:14px;
+}
+
+@media(max-width:700px){
+
+    .stats{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+    .container{
+        padding:12px;
+    }
+
+    h1{
+        font-size:22px;
+    }
+
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- HEADER -->
+
+    <div class="card">
+
+        <h1>Deriv AI Market Scanner</h1>
+
+        <div class="subtitle">
+            AI market analysis • automatic 60-second rescan
+        </div>
+
+        <div id="connectionStatus" class="status connecting">
+            Connecting to scanner...
+        </div>
+
+        <div class="notice">
+            Analysis only. This scanner does not place trades.
+            Model strength is a statistical confidence score,
+            not a guaranteed win probability.
+        </div>
+
+    </div>
+
+
+    <!-- MATCH SIGNAL -->
+
+    <div class="card signal">
+
+        <div class="signal-title">
+            MATCH SIGNAL
+        </div>
+
+        <div id="matchDigit" class="match-digit">
+            —
+        </div>
+
+        <div id="matchStrength" class="strength">
+            Model strength —
+        </div>
+
+        <div id="signalDescription" class="signal-description">
+            Waiting for market analysis...
+        </div>
+
+    </div>
+
+
+    <!-- CONTROLS -->
+
+    <div class="card">
+
+        <div class="controls">
+
+            <button
+                id="startButton"
+                class="start">
+                Start Scanner
+            </button>
+
+            <button
+                id="stopButton"
+                class="stop">
+                Stop
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- STATISTICS -->
+
+    <div class="stats">
+
+        <div class="stat">
+            <div class="stat-label">
+                Markets
+            </div>
+
+            <div
+                id="marketCount"
+                class="stat-value">
+                0
+            </div>
+        </div>
+
+
+        <div class="stat">
+
+            <div class="stat-label">
+                Ticks
+            </div>
+
+            <div
+                id="tickCount"
+                class="stat-value">
+                0
+            </div>
+
+        </div>
+
+
+        <div class="stat">
+
+            <div class="stat-label">
+                Even
+            </div>
+
+            <div
+                id="evenValue"
+                class="stat-value">
+                —
+            </div>
+
+        </div>
+
+
+        <div class="stat">
+
+            <div class="stat-label">
+                Odd
+            </div>
+
+            <div
+                id="oddValue"
+                class="stat-value">
+                —
+            </div>
+
+        </div>
+
+
+        <div class="stat">
+
+            <div class="stat-label">
+                Next Scan
+            </div>
+
+            <div
+                id="countdown"
+                class="stat-value">
+                60s
+            </div>
+
+        </div>
+
+
+        <div class="stat">
+
+            <div class="stat-label">
+                Selected Market
+            </div>
+
+            <div
+                id="selectedMarket"
+                class="stat-value">
+                —
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- MARKETS -->
+
+    <div class="card">
+
+        <h2>LIVE MARKETS</h2>
+
+        <div class="table-wrap">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            Symbol
+                        </th>
+
+                        <th>
+                            Ticks
+                        </th>
+
+                        <th>
+                            Match
+                        </th>
+
+                        <th>
+                            Strength
+                        </th>
+
+                        <th>
+                            Even
+                        </th>
+
+                        <th>
+                            Odd
+                        </th>
+
+                        <th>
+                            Signal
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody id="marketTable">
+
+                    <tr>
+
+                        <td colspan="7">
+                            Waiting for market data...
+                        </td>
+
+                    </tr>
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+
+    <!-- ACTIVITY -->
+
+    <div class="card">
+
+        <h2>
+            ACTIVITY LOG
+        </h2>
+
+        <div
+            id="activityLog"
+            class="log">
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+/*
+====================================================
+DERIV AI MARKET SCANNER
+FRONTEND
+====================================================
+*/
+
+const BACKEND_URL =
+    "wss://deriv-ai-scanner-backend.onrender.com";
+
+
+let socket = null;
+
+let scannerRunning = true;
+
+let reconnectTimer = null;
+
+let countdown = 60;
+
+let countdownTimer = null;
+
+let selectedSymbol = null;
+
+const marketData = {};
+
+
+/*
+====================================================
+HELPERS
+====================================================
+*/
+
+function getElement(id){
+
+    return document.getElementById(id);
+
+}
+
+
+function addLog(message){
+
+    const log =
+        getElement("activityLog");
+
+    const line =
+        document.createElement("div");
+
+    line.textContent =
+        new Date().toLocaleTimeString()
+        + " — "
+        + message;
+
+    log.prepend(line);
+
+}
+
+
+function setConnectionStatus(
+    state
+){
+
+    const element =
+        getElement("connectionStatus");
+
+
+    if(state === "connected"){
+
+        element.textContent =
+            "● Connected";
+
+        element.className =
+            "status connected";
+
+    }
+
+    else if(state === "connecting"){
+
+        element.textContent =
+            "● Connecting...";
+
+        element.className =
+            "status connecting";
+
+    }
+
+    else{
+
+        element.textContent =
+            "● Disconnected";
+
+        element.className =
+            "status";
+
+    }
+
+}
+
+
+/*
+====================================================
+UPDATE MAIN DISPLAY
+====================================================
+*/
+
+function updateMainDisplay(
+    data
+){
+
+    if(!data){
+
+        return;
+
+    }
+
+
+    selectedSymbol =
+        data.symbol;
+
+
+    getElement(
+        "selectedMarket"
+    ).textContent =
+        data.symbol;
+
+
+    getElement(
+        "tickCount"
+    ).textContent =
+        data.ticks;
+
+
+    getElement(
+        "evenValue"
+    ).textContent =
+        data.even + "%";
+
+
+    getElement(
+        "oddValue"
+    ).textContent =
+        data.odd + "%";
+
+
+    const digit =
+        getElement("matchDigit");
+
+    const strength =
+        getElement("matchStrength");
+
+    const description =
+        getElement("signalDescription");
+
+
+    strength.textContent =
+        "Model strength "
+        + data.matchStrength
+        + "%";
+
+
+    /*
+    MATCH IS SHOWN ONLY
+    WHEN STRENGTH >= 80
+    */
+
+    if(
+        data.matchStrength >= 80
+    ){
+
+        digit.textContent =
+            "DIGIT "
+            + data.matchDigit;
+
+        digit.className =
+            "match-digit signal-good";
+
+        description.textContent =
+            "MATCH signal available";
+
+    }
+
+    else{
+
+        digit.textContent =
+            "—";
+
+        digit.className =
+            "match-digit";
+
+        description.textContent =
+            "No Match signal — requires 80%+ strength";
+
+    }
+
+}
+
+
+/*
+====================================================
+RENDER MARKET TABLE
+====================================================
+*/
+
+function renderMarkets(){
+
+    const markets =
+        Object.values(
+            marketData
+        );
+
+
+    getElement(
+        "marketCount"
+    ).textContent =
+        markets.length;
+
+
+    const table =
+        getElement(
+            "marketTable"
+        );
+
+
+    if(markets.length === 0){
+
+        table.innerHTML =
+            `
+            <tr>
+                <td colspan="7">
+                    Waiting for market data...
+                </td>
+            </tr>
+            `;
+
+        return;
+
+    }
+
+
+    table.innerHTML =
+        markets.map(
+            data => {
+
+                const signal =
+                    data.matchStrength >= 80
+                    ? "MATCH"
+                    : "NO MATCH";
+
+
+                const signalClass =
+                    data.matchStrength >= 80
+                    ? "signal-good"
+                    : "signal-none";
+
+
+                return `
+
+                <tr>
+
+                    <td>
+                        <button
+                            onclick="selectMarket('${data.symbol}')"
+                            style="
+                            background:#19314d;
+                            color:white;
+                            padding:7px 10px;
+                            margin:0;
+                            "
+                        >
+                            ${data.symbol}
+                        </button>
+                    </td>
+
+                    <td>
+                        ${data.ticks}
+                    </td>
+
+                    <td>
+                        ${data.matchDigit}
+                    </td>
+
+                    <td>
+                        ${data.matchStrength}%
+                    </td>
+
+                    <td>
+                        ${data.even}%
+                    </td>
+
+                    <td>
+                        ${data.odd}%
+                    </td>
+
+                    <td
+                        class="${signalClass}"
+                    >
+                        ${signal}
+                    </td>
+
+                </tr>
+
+                `;
+
+            }
+        ).join("");
+
+
+    /*
+    Keep selected market
+    */
+
+    if(
+        selectedSymbol &&
+        marketData[selectedSymbol]
+    ){
+
+        updateMainDisplay(
+            marketData[selectedSymbol]
+        );
+
+    }
+
+    else if(markets.length > 0){
+
+        updateMainDisplay(
+            markets[0]
+        );
+
+    }
+
+}
+
+
+/*
+====================================================
+SELECT MARKET
+====================================================
+*/
+
+function selectMarket(
+    symbol
+){
+
+    if(
+        !marketData[symbol]
+    ){
+
+        return;
+
+    }
+
+
+    selectedSymbol =
+        symbol;
+
+
+    updateMainDisplay(
+        marketData[symbol]
+    );
+
+}
+
+
+window.selectMarket =
+    selectMarket;
+
+
+/*
+====================================================
+CONNECT TO BACKEND
+====================================================
+*/
+
+function connect(){
+
+    if(!scannerRunning){
+
+        return;
+
+    }
+
+
+    if(socket){
+
+        try{
+
+            socket.close();
+
+        }
+
+        catch(error){}
+
+    }
+
+
+    setConnectionStatus(
+        "connecting"
+    );
+
+
+    addLog(
+        "Connecting to scanner backend..."
+    );
+
+
+    socket =
+        new WebSocket(
+            BACKEND_URL
+        );
+
+
+    socket.onopen =
+        function(){
+
+            setConnectionStatus(
+                "connected"
+            );
+
+
+            addLog(
+                "Connected to scanner backend"
+            );
+
+        };
+
+
+    socket.onmessage =
+        function(event){
+
+            try{
+
+                const message =
+                    JSON.parse(
+                        event.data
+                    );
+
+
+                /*
+                CONNECTION
+                */
+
+                if(
+                    message.type ===
+                    "connection"
+                ){
+
+                    if(
+                        message.connected
+                    ){
+
+                        setConnectionStatus(
+                            "connected"
+                        );
+
+                    }
+
+                    else{
+
+                        setConnectionStatus(
+                            "connecting"
+                        );
+
+                    }
+
+                }
+
+
+                /*
+                MARKETS
+                */
+
+                else if(
+                    message.type ===
+                    "markets"
+                ){
+
+                    addLog(
+                        "Found "
+                        + message.markets.length
+                        + " digit markets"
+                    );
+
+                }
+
+
+                /*
+                MARKET ANALYSIS
+                */
+
+                else if(
+                    message.type ===
+                    "market"
+                ){
+
+                    const data =
+                        message.data;
+
+
+                    if(!data){
+
+                        return;
+
+                    }
+
+
+                    marketData[
+                        data.symbol
+                    ] =
+                        data;
+
+
+                    renderMarkets();
+
+                }
+
+
+                /*
+                NEW SCAN
+                */
+
+                else if(
+                    message.type ===
+                    "scan"
+                ){
+
+                    countdown =
+                        60;
+
+                    addLog(
+                        "New 60-second market scan started"
+                    );
+
+                }
+
+
+                /*
+                SCAN COMPLETE
+                */
+
+                else if(
+                    message.type ===
+                    "scan_complete"
+                ){
+
+                    countdown =
+                        60;
+
+                    addLog(
+                        "Market scan complete"
+                    );
+
+                }
+
+
+                /*
+                ERROR
+                */
+
+                else if(
+                    message.type ===
+                    "error"
+                ){
+
+                    addLog(
+                        "Backend: "
+                        + message.message
+                    );
+
+                }
+
+            }
+
+            catch(error){
+
+                addLog(
+                    "Invalid message received"
+                );
+
+            }
+
+        };
+
+
+    socket.onerror =
+        function(){
+
+            addLog(
+                "WebSocket connection error"
+            );
+
+        };
+
+
+    socket.onclose =
+        function(){
+
+            setConnectionStatus(
+                "connecting"
+            );
+
+
+            addLog(
+                "Backend disconnected"
+            );
+
+
+            if(
+                scannerRunning
+            ){
+
+                clearTimeout(
+                    reconnectTimer
+                );
+
+
+                reconnectTimer =
+                    setTimeout(
+                        function(){
+
+                            connect();
+
+                        },
+                        5000
+                    );
+
+            }
+
+        };
+
+}
+
+
+/*
+====================================================
+COUNTDOWN
+====================================================
+*/
+
+function startCountdown(){
+
+    clearInterval(
+        countdownTimer
+    );
+
+
+    countdownTimer =
+        setInterval(
+            function(){
+
+                if(
+                    !scannerRunning
+                ){
+
+                    return;
+
+                }
+
+
+                countdown--;
+
+
+                if(
+                    countdown <= 0
+                ){
+
+                    countdown =
+                        60;
+
+                }
+
+
+                getElement(
+                    "countdown"
+                ).textContent =
+                    countdown + "s";
+
+            },
+            1000
+        );
+
+}
+
+
+/*
+====================================================
+START BUTTON
+====================================================
+*/
+
+getElement(
+    "startButton"
+).addEventListener(
+    "click",
+    function(){
+
+        scannerRunning =
+            true;
+
+
+        countdown =
+            60;
+
+
+        addLog(
+            "Scanner started"
+        );
+
+
+        connect();
+
+    }
+);
+
+
+/*
+====================================================
+STOP BUTTON
+====================================================
+*/
+
+getElement(
+    "stopButton"
+).addEventListener(
+    "click",
+    function(){
+
+        scannerRunning =
+            false;
+
+
+        clearTimeout(
+            reconnectTimer
+        );
+
+
+        if(socket){
+
+            try{
+
+                socket.close();
+
+            }
+
+            catch(error){}
+
+        }
+
+
+        setConnectionStatus(
+            "disconnected"
+        );
+
+
+        addLog(
+            "Scanner stopped"
+        );
+
+    }
+);
+
+
+/*
+====================================================
+START
+====================================================
+*/
+
+startCountdown();
+
+connect();
+
+</script>
+
+</body>
+</html>
